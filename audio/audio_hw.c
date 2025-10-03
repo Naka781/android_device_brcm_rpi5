@@ -47,18 +47,27 @@
 #define CODEC_BASE_FRAME_COUNT 32
 
 /* number of base blocks in a short period (low latency) */
-#define PERIOD_MULTIPLIER 32  /* 21 ms */
+#define PERIOD_MULTIPLIER 512//32  /* 21 ms */
 /* number of frames per short period (low latency) */
 #define PERIOD_SIZE (CODEC_BASE_FRAME_COUNT * PERIOD_MULTIPLIER)
 /* number of pseudo periods for low latency playback */
-#define PLAYBACK_PERIOD_COUNT 4
+#define PLAYBACK_PERIOD_COUNT 4 //4
 #define PLAYBACK_PERIOD_START_THRESHOLD 2
-#define CODEC_SAMPLING_RATE 48000
+#define CODEC_SAMPLING_RATE 192000  //352800 //48000
 #define CHANNEL_STEREO 2
 #define MIN_WRITE_SLEEP_US      5000
 
+
 int pcm_card;
 int pcm_device;
+
+static struct pcm *pcm_loopback = NULL;
+int pcm_card_loop = 1;   // à ajuster selon ton système (voir `aplay -l`)
+int pcm_device_loop = 0;
+
+struct stub_stream_in {
+    struct audio_stream_in stream;
+};
 
 struct stub_stream_in {
     struct audio_stream_in stream;
@@ -86,6 +95,23 @@ struct alsa_stream_out {
     int write_threshold;
     unsigned int written;
 };
+
+static int probe_pcm_loopback_card() {
+    for (int i = 0; i < 5; i++) {
+        char path[64], id[32];
+        snprintf(path, sizeof(path), "/proc/asound/card%d/id", i);
+        FILE *fp = fopen(path, "r");
+        if (fp) {
+            if (fgets(id, sizeof(id), fp) && strncmp(id, "Loopback", 8) == 0) {
+                fclose(fp);
+                return i;
+            }
+            fclose(fp);
+        }
+    }
+    return -1; // not found
+}
+
 
 static int probe_pcm_out_card() {
     FILE *fp;
@@ -162,6 +188,23 @@ static int start_output_stream(struct alsa_stream_out *out)
     }
 
     adev->active_output = out;
+    //Pcm loopback
+    if (!pcm_loopback) {
+        pcm_card_loop = probe_pcm_loopback_card();
+        pcm_device_loop = 0; // en général 0
+        if (pcm_card_loop >= 0) {
+            struct pcm_config cfg = out->config;
+            pcm_loopback = pcm_open(pcm_card_loop, pcm_device_loop,
+                                    PCM_OUT | PCM_MMAP | PCM_NOIRQ | PCM_MONOTONIC,
+                                    &cfg);
+            if (!pcm_is_ready(pcm_loopback)) {
+                ALOGE("cannot open loopback: %s", pcm_get_error(pcm_loopback));
+                pcm_close(pcm_loopback);
+                pcm_loopback = NULL;
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -324,6 +367,14 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer,
     if (ret == 0) {
         out->written += out_frames;
     }
+    
+    if (pcm_loopback) {
+        int ret_loop = pcm_mmap_write(pcm_loopback, buffer, out_frames * frame_size);
+        if (ret_loop != 0) {
+            ALOGW("loopback write failed: %s", pcm_get_error(pcm_loopback));
+        }
+    }
+    
 exit:
     pthread_mutex_unlock(&out->lock);
 
@@ -516,7 +567,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
 
     out->config.channels = CHANNEL_STEREO;
     out->config.rate = CODEC_SAMPLING_RATE;
-    out->config.format = PCM_FORMAT_S16_LE;
+    out->config.format = PCM_FORMAT_S32_LE;
     out->config.period_size = PERIOD_SIZE;
     out->config.period_count = PLAYBACK_PERIOD_COUNT;
 
@@ -551,6 +602,10 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
 static void adev_close_output_stream(struct audio_hw_device *dev,
         struct audio_stream_out *stream)
 {
+    if (pcm_loopback) {
+        pcm_close(pcm_loopback);
+        pcm_loopback = NULL;
+    }
     ALOGV("adev_close_output_stream...");
     free(stream);
 }
