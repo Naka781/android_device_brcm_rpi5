@@ -41,6 +41,8 @@
 #include <hardware/audio_effect.h>
 #include <hardware/audio_alsaops.h>
 #include <audio_effects/effect_aec.h>
+/* Minimum granularity - Arbitrary but small value */
+#define CODEC_BASE_FRAME_COUNT 32
 
 #define PERIOD_MULTIPLIER 512//32  /* 21 ms */
 /* number of frames per short period (low latency) */
