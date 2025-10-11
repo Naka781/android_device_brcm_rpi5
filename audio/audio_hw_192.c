@@ -42,18 +42,13 @@
 #include <hardware/audio_alsaops.h>
 #include <audio_effects/effect_aec.h>
 
-
-/* Minimum granularity - Arbitrary but small value */
-#define CODEC_BASE_FRAME_COUNT 32
-
-/* number of base blocks in a short period (low latency) */
-#define PERIOD_MULTIPLIER 32  /* 21 ms */
+#define PERIOD_MULTIPLIER 512//32  /* 21 ms */
 /* number of frames per short period (low latency) */
 #define PERIOD_SIZE (CODEC_BASE_FRAME_COUNT * PERIOD_MULTIPLIER)
 /* number of pseudo periods for low latency playback */
-#define PLAYBACK_PERIOD_COUNT 4
+#define PLAYBACK_PERIOD_COUNT 4 //4
 #define PLAYBACK_PERIOD_START_THRESHOLD 2
-#define CODEC_SAMPLING_RATE 48000
+#define CODEC_SAMPLING_RATE 192000  //352800 //48000
 #define CHANNEL_STEREO 2
 #define MIN_WRITE_SLEEP_US      5000
 
@@ -412,7 +407,7 @@ static audio_channel_mask_t in_get_channels(const struct audio_stream *stream)
 
 static audio_format_t in_get_format(const struct audio_stream *stream)
 {
-    return AUDIO_FORMAT_PCM_16_BIT;
+    return AUDIO_FORMAT_PCM_32_BIT;
 }
 
 static int in_set_format(struct audio_stream *stream, audio_format_t format)
@@ -516,7 +511,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
 
     out->config.channels = CHANNEL_STEREO;
     out->config.rate = CODEC_SAMPLING_RATE;
-    out->config.format = PCM_FORMAT_S16_LE;
+    out->config.format = PCM_FORMAT_S32_LE;
     out->config.period_size = PERIOD_SIZE;
     out->config.period_count = PLAYBACK_PERIOD_COUNT;
 
